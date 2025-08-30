@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESC Pregnancy — mWHO 2.0 Interactive Flowchart</title>
+  <meta name="description" content="Interactive mWHO 2.0 risk classification tool (ESC Pregnancy in CVD 2025)."/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>❤️</text></svg>">
+  <!-- Tailwind Play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React + ReactDOM UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Babel for JSX so we can stay single-file -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    html, body { height: 100%; }
+    body { background: #f8fafc; }
+  </style>
+</head>
+<body class="min-h-screen text-gray-900">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    // === ESC Pregnancy in CVD — mWHO 2.0 Interactive Flowchart (2025) ===
+    const { useMemo, useState } = React;
+
+    const classWeight = { I: 1, II: 2, "II–III": 2.5, III: 3, IV: 4 };
+
+    function worstClass(classes) {
+      if (!classes.length) return null;
+      return classes.reduce((worse, cur) => (classWeight[cur] > classWeight[worse] ? cur : worse));
+    }
+
+    function riskMeaning(klass) {
+      switch (klass) {
+        case "I": return "No detectable ↑ maternal mortality; no/mild ↑ morbidity.";
+        case "II": return "Small ↑ maternal mortality or moderate ↑ morbidity.";
+        case "II–III": return "Intermediate risk between II and III.";
+        case "III": return "Significantly ↑ maternal mortality or severe morbidity.";
+        case "IV": return "Extremely high risk; pregnancy generally contraindicated.";
+        default: return "";
+      }
+    }
+
+    function baseManagement(klass) {
+      switch (klass) {
+        case "I":
+          return [
+            "Routine obstetric care; consider a baseline cardiology review.",
+            "Vaginal delivery preferred unless obstetric indications dictate otherwise.",
+          ];
+        case "II":
+          return [
+            "Local care with cardiology input; individualized counselling.",
+            "Vaginal delivery preferred; plan analgesia and monitoring per lesion.",
+          ];
+        case "II–III":
+          return [
+            "Shared care with a Pregnancy Heart Team; schedule follow-ups at an experienced center.",
+            "Vaginal delivery usually preferred; delivery in a center with cardiology/anesthesia expertise.",
+          ];
+        case "III":
+          return [
+            "High risk — care led by a Pregnancy Heart Team at an expert center.",
+            "Close surveillance (e.g., trimester or more frequent), anesthesia consult, and delivery planning.",
+            "Vaginal delivery often preferred with careful second-stage management; consider assisted second stage as indicated.",
+            "Postpartum monitoring (first 48–72 h) due to decompensation risk.",
+          ];
+        case "IV":
+          return [
+            "Pregnancy is generally contraindicated / strongly discouraged due to extremely high maternal risk.",
+            "Pre-pregnancy counselling about alternatives; if already pregnant, urgent Pregnancy Heart Team evaluation at an expert center.",
+            "Delivery mode individualized; many scenarios require planned delivery in a tertiary ICU-capable center.",
+          ];
+        default: return [];
+      }
+    }
+
+    function conditionSpecificHints(result) {
+      const hints = [];
+      const L = result.label.toLowerCase();
+
+      if (L.includes("mechanical valve")) {
+        hints.push("Anticoagulation plan must be individualized by the Pregnancy Heart Team; avoid empiric changes without MDT.");
+      }
+      if (L.includes("pulmonary arterial hypertension")) {
+        hints.push("PH (especially PAH) carries very high maternal risk; manage in highly specialized centers; avoid teratogenic PH drugs; careful volume/hemodynamic management.");
+      }
+      if (L.includes("ppcm")) {
+        hints.push("Beta-blockers and HF therapy per guideline; avoid teratogens (ACEi/ARB) during pregnancy. Postpartum decongestion and follow-up are crucial.");
+      }
+      if (L.includes("aortopathy") || L.includes("marfan") || L.includes("bav") || L.includes("turner") || L.includes("dissection")) {
+        hints.push("Strict BP control; serial aortic imaging; thresholds for delivery planning at larger diameters; coordinate with cardiac surgery/anesthesia.");
+      }
+      if (L.includes("severe aortic stenosis")) {
+        hints.push("Avoid hypotension/tachycardia; anesthesia planning is critical. Consider assisted second stage to limit Valsalva if symptomatic/critical.");
+      }
+      if (L.includes("systemic rv") || L.includes("fontan")) {
+        hints.push("Monitor for volume shifts and arrhythmias; thromboprophylaxis as indicated; deliver at expert ACHD center.");
+      }
+
+      return hints;
+    }
+
+    function deliveryGuidance(result, overall) {
+      const out = [];
+      const L = result.label.toLowerCase();
+
+      out.push("Mode of delivery is primarily obstetric; in most cardiac conditions, planned vaginal delivery with neuraxial analgesia is preferred.");
+
+      if (L.includes(">45 mm marfan") || L.includes("marfan >45") || L.includes("htad >45") || L.includes("bav >50") || L.includes("turner asi >25") || L.includes("ehlers")) {
+        out.push("For large aortic diameters/high-risk aortopathy, a planned cesarean may be recommended at an expert center.");
+      }
+      if (L.includes("pulmonary arterial hypertension")) {
+        out.push("In PAH, plan delivery in ICU-capable tertiary center; anesthetic approach and timing individualized.");
+      }
+      if (L.includes("mechanical valve")) {
+        out.push("Coordinate delivery timing with anticoagulation transitions to minimize bleeding/thrombotic risk.");
+      }
+      if (overall === "III" || overall === "IV") {
+        out.push("Deliver in an expert center with access to cardiology, anesthesia, neonatology, and critical care.");
+      }
+
+      return out;
+    }
+
+    const GROUPS = [
+      {
+        id: "ventricular",
+        name: "Ventricular (dys)function / PH / PPCM",
+        subtitle: "EF, NYHA, RV, pulmonary hypertension, peripartum cardiomyopathy",
+        steps: [
+          {
+            id: "v1",
+            prompt: "Pulmonary arterial hypertension (PAH)?",
+            options: [
+              { id: "v1y", text: "Yes", result: { label: "Pulmonary arterial hypertension (any)", riskClass: "IV", notes: "PAH" } },
+              { id: "v1n", text: "No", goto: "v2" },
+            ],
+          },
+          {
+            id: "v2",
+            prompt: "Left ventricular status (choose the worst that applies)",
+            options: [
+              { id: "v2a", text: "EF < 30% OR NYHA III/IV", result: { label: "LV dysfunction: EF <30% or NYHA III/IV", riskClass: "IV" } },
+              { id: "v2b", text: "EF 30–45%", result: { label: "LV dysfunction: EF 30–45%", riskClass: "III" } },
+              { id: "v2c", text: "EF > 45%", goto: "v3" },
+            ],
+          },
+          {
+            id: "v3",
+            prompt: "Right ventricle (sub‑pulmonary) function?",
+            options: [
+              { id: "v3a", text: "Significantly impaired", result: { label: "Significantly impaired sub‑pulmonary RV function", riskClass: "II–III" } },
+              { id: "v3b", text: "Normal/mild impairment", goto: "v4" },
+            ],
+          },
+          {
+            id: "v4",
+            prompt: "History of PPCM? (peripartum cardiomyopathy)",
+            options: [
+              { id: "v4a", text: "> mild residual LV impairment", result: { label: "PPCM with > mild residual LV impairment", riskClass: "IV" } },
+              { id: "v4b", text: "≤ mild residual LV impairment", result: { label: "PPCM with ≤ mild residual LV impairment", riskClass: "III" } },
+              { id: "v4c", text: "No PPCM", result: { label: "LV >45% + normal/mild RV + no PPCM", riskClass: "II–III" } },
+            ],
+          },
+        ],
+      },
+      {
+        id: "cardiomyopathy",
+        name: "Cardiomyopathies (HCM, DCM/NDLVC, ARVC)",
+        steps: [
+          {
+            id: "c1",
+            prompt: "Pick the cardiomyopathy",
+            options: [
+              { id: "c1h", text: "Hypertrophic cardiomyopathy (HCM)", goto: "cH" },
+              { id: "c1d", text: "Dilated/Non‑dilated LV cardiomyopathy (DCM/NDLVC)", goto: "cD" },
+              { id: "c1a", text: "Arrhythmogenic RV cardiomyopathy (ARVC)", goto: "cA" },
+            ],
+          },
+          {
+            id: "cH",
+            prompt: "HCM — choose the best fit",
+            options: [
+              { id: "cH1", text: "Genotype+ / phenotype−", result: { label: "HCM genotype+/phenotype−", riskClass: "I" } },
+              { id: "cH2", text: "Arrhythmic and/or moderate haemodynamic complications", result: { label: "HCM with arrhythmic and/or moderate haemodynamic complications", riskClass: "III" } },
+              { id: "cH3", text: "Severely symptomatic LV dysfunction (EF <50%) or symptomatic severe LVOT obstruction (≥50 mmHg)", result: { label: "HCM with severe LV dysfunction/obstruction", riskClass: "IV" } },
+            ],
+          },
+          {
+            id: "cD",
+            prompt: "DCM/NDLVC — LV function",
+            options: [
+              { id: "cD1", text: "EF > 45% (normal/mild impairment)", result: { label: "DCM/NDLVC EF >45%", riskClass: "II–III" } },
+              { id: "cD2", text: "EF 30–45% (moderate)", result: { label: "DCM/NDLVC EF 30–45%", riskClass: "III" } },
+              { id: "cD3", text: "EF < 30% or NYHA III/IV", result: { label: "DCM/NDLVC EF <30% or NYHA III/IV", riskClass: "IV" } },
+            ],
+          },
+          {
+            id: "cA",
+            prompt: "ARVC — severity",
+            options: [
+              { id: "cA1", text: "Genotype+ with no/mild phenotype (low risk)", result: { label: "ARVC low‑risk (genotype+ no/mild phenotype)", riskClass: "II–III" } },
+              { id: "cA2", text: "Moderate/severe disease", result: { label: "ARVC moderate/severe", riskClass: "III" } },
+            ],
+          },
+        ],
+      },
+      {
+        id: "valvular",
+        name: "Valvular Heart Disease",
+        steps: [
+          {
+            id: "vhd1",
+            prompt: "Pick the dominant valvular issue",
+            options: [
+              { id: "vhdps", text: "Pulmonary stenosis — small/mild", result: { label: "Pulmonary stenosis (mild)", riskClass: "I" } },
+              { id: "vhdmvp", text: "Mitral valve prolapse without significant regurgitation", result: { label: "MVP without significant MR", riskClass: "I" } },
+              { id: "vhdms", text: "Mitral stenosis (choose severity)", goto: "vhdms2" },
+              { id: "vhdas", text: "Aortic stenosis (choose status)", goto: "vhdas2" },
+              { id: "vhdrg", text: "Left‑sided regurgitation (MR/AR) — severe", result: { label: "Severe left‑sided regurgitation (MR/AR)", riskClass: "III" } },
+              { id: "vhdother", text: "Native/tissue valve: mild MS, moderate AS, moderate regurgitation", result: { label: "Native/tissue valve (mild MS/moderate AS/moderate regurg)", riskClass: "II–III" } },
+              { id: "vhdmech", text: "Mechanical valve — well controlled", result: { label: "Mechanical valve (uncomplicated, INR well controlled)", riskClass: "III", notes: "mechanical valve" } },
+            ],
+          },
+          {
+            id: "vhdms2",
+            prompt: "Mitral stenosis — severity",
+            options: [
+              { id: "vhdms2m", text: "Moderate MS", result: { label: "Mitral stenosis (moderate)", riskClass: "III" } },
+              { id: "vhdms2s", text: "Severe MS", result: { label: "Mitral stenosis (severe)", riskClass: "IV" } },
+            ],
+          },
+          {
+            id: "vhdas2",
+            prompt: "Aortic stenosis — status",
+            options: [
+              { id: "vhdas2a", text: "Severe AS — asymptomatic", result: { label: "Severe aortic stenosis (asymptomatic)", riskClass: "III" } },
+              { id: "vhdas2s", text: "Severe AS — symptomatic", result: { label: "Severe aortic stenosis (symptomatic)", riskClass: "IV" } },
+            ],
+          },
+        ],
+      },
+      {
+        id: "chd",
+        name: "Congenital Heart Disease (ACHD)",
+        steps: [
+          {
+            id: "chd1",
+            prompt: "Select the closest scenario",
+            options: [
+              { id: "chd1a", text: "Repaired simple lesion (ASD/VSD/PDA/APVD) with no significant residual", result: { label: "Repaired simple CHD without significant residual", riskClass: "I" } },
+              { id: "chd1b", text: "Unoperated uncomplicated ASD/VSD", result: { label: "Unoperated uncomplicated ASD/VSD", riskClass: "II" } },
+              { id: "chd1c", text: "Repaired Tetralogy of Fallot without significant residual/arrhythmias", result: { label: "Repaired ToF w/o significant residual/arrhythmia", riskClass: "II" } },
+              { id: "chd1d", text: "TGA with arterial switch, no significant residual", result: { label: "TGA arterial switch w/o significant residual", riskClass: "II" } },
+              { id: "chd1e", text: "Repaired AVSD without significant residual", result: { label: "Repaired AVSD w/o significant residual", riskClass: "II–III" } },
+              { id: "chd1f", text: "Ebstein anomaly: mild–moderate TR, no TS, no accessory pathway", result: { label: "Ebstein (uncomplicated)", riskClass: "II–III" } },
+              { id: "chd1g", text: "Ebstein anomaly with complication (e.g., significant TR/TS/arrhythmias)", result: { label: "Ebstein (complicated)", riskClass: "III" } },
+              { id: "chd1h", text: "Systemic RV — good/mildly ↓ function", result: { label: "Systemic RV (good/mildly ↓)", riskClass: "III" } },
+              { id: "chd1i", text: "Systemic RV — moderate/severely ↓ function", result: { label: "Systemic RV (moderate/severely ↓)", riskClass: "IV" } },
+              { id: "chd1j", text: "Fontan — uncomplicated (good function, no significant valve dz/arrhythmias, good ET, normal sats)", result: { label: "Fontan (uncomplicated)", riskClass: "III" } },
+              { id: "chd1k", text: "Fontan — any complication", result: { label: "Fontan (complicated)", riskClass: "IV" } },
+              { id: "chd1l", text: "Cyanotic CHD — unrepaired (not Eisenmenger)", result: { label: "Cyanotic CHD unrepaired (not Eisenmenger)", riskClass: "III" } },
+              { id: "chd1m", text: "Eisenmenger syndrome", result: { label: "Eisenmenger syndrome", riskClass: "IV" } },
+            ],
+          },
+        ],
+      },
+      {
+        id: "aortopathy",
+        name: "Aortopathy",
+        steps: [
+          {
+            id: "ao1",
+            prompt: "Pick the closest aortic scenario (use largest diameter/most severe)",
+            options: [
+              { id: "ao1a", text: "Non‑HTAD mild dilation <40 mm", result: { label: "Aortopathy: non‑HTAD mild <40 mm", riskClass: "I" } },
+              { id: "ao1b", text: "Turner syndrome without CV features (no BAV/CoA/HTN/dilation)", result: { label: "Turner without CV features", riskClass: "II" } },
+              { id: "ao1c", text: "HTAD (e.g., Marfan) w/o dilation OR BAV aorta <45 mm OR repaired CoA", result: { label: "HTAD w/o dilation / BAV <45 / repaired CoA", riskClass: "II–III" } },
+              { id: "ao1d", text: "Marfan/HTAD 40–45 mm", result: { label: "Marfan/HTAD 40–45 mm (aortopathy)", riskClass: "III" } },
+              { id: "ao1e", text: "BAV 45–50 mm", result: { label: "BAV 45–50 mm (aortopathy)", riskClass: "III" } },
+              { id: "ao1f", text: "Turner ASI 20–25 mm²/m", result: { label: "Turner ASI 20–25 mm²/m (aortopathy)", riskClass: "III" } },
+              { id: "ao1g", text: "Other aortic dilation <50 mm", result: { label: "Other aortic dilation <50 mm (aortopathy)", riskClass: "III" } },
+              { id: "ao1h", text: "Marfan/HTAD >45 mm", result: { label: "Marfan/HTAD >45 mm (aortopathy >45 mm Marfan)", riskClass: "IV" } },
+              { id: "ao1i", text: "BAV >50 mm", result: { label: "BAV >50 mm (aortopathy >50 BAV)", riskClass: "IV" } },
+              { id: "ao1j", text: "Turner ASI >25 mm²/m", result: { label: "Turner ASI >25 mm²/m (aortopathy)", riskClass: "IV" } },
+              { id: "ao1k", text: "Vascular Ehlers–Danlos / severe (re)CoA / prior dissection with increasing diameter", result: { label: "High-risk aortopathy (e.g., vascular EDS, severe (re)CoA, prior dissection increasing)", riskClass: "IV" } },
+              { id: "ao1l", text: "Prior dissection with stable diameter", result: { label: "Prior aortic dissection with stable diameter", riskClass: "III" } },
+            ],
+          },
+        ],
+      },
+      {
+        id: "arrhythmia",
+        name: "Arrhythmias",
+        steps: [
+          {
+            id: "arr1",
+            prompt: "Pick the arrhythmia scenario",
+            options: [
+              { id: "arr1a", text: "Isolated atrial/ventricular ectopy", result: { label: "Isolated atrial/ventricular ectopy", riskClass: "I" } },
+              { id: "arr1b", text: "SVT or bradycardia requiring pacemaker", result: { label: "SVT or pacemaker-dependent bradycardia", riskClass: "II" } },
+              { id: "arr1c", text: "Inherited arrhythmia — low risk (LQTS with no prior events on full-dose beta-blocker; well controlled CPVT; Brugada w/o events)", result: { label: "Inherited arrhythmia (low risk)", riskClass: "II–III" } },
+              { id: "arr1d", text: "LQT2 postpartum / symptomatic CPVT/LQTS not controlled / sustained VT / Brugada with prior events", result: { label: "Inherited arrhythmia (higher risk)", riskClass: "III" } },
+            ],
+          },
+        ],
+      },
+      {
+        id: "coronary",
+        name: "Acquired Coronary & Other",
+        steps: [
+          {
+            id: "cor1",
+            prompt: "Pick the closest scenario",
+            options: [
+              { id: "cor1a", text: "Spontaneous coronary artery dissection (prior SCAD)", result: { label: "Prior SCAD", riskClass: "III" } },
+              { id: "cor1b", text: "Prior ischemic event (STEMI/NSTE-ACS)", result: { label: "Prior ischemic cardiac event", riskClass: "III" } },
+              { id: "cor1c", text: "Prior adverse pregnancy outcome requiring hospitalization", result: { label: "Prior adverse pregnancy outcome (hospitalized)", riskClass: "III" } },
+              { id: "cor1d", text: "Prior adverse cardiovascular effects of cancer therapy", result: { label: "Prior cardiotoxic cancer therapy — adverse CV effects", riskClass: "III" } },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const Chip = ({ children }) => (
+      <span className="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium bg-white/60 border-gray-300 text-gray-800">{children}</span>
+    );
+
+    const Card = ({ title, subtitle, children }) => (
+      <div className="rounded-2xl border bg-white shadow-sm p-4 md:p-6">
+        <div className="mb-3 flex items-start justify-between">
+          <div>
+            <h2 className="text-base md:text-lg font-semibold tracking-tight">{title}</h2>
+            {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+          </div>
+        </div>
+        {children}
+      </div>
+    );
+
+    function App() {
+      const [activeGroupId, setActiveGroupId] = useState(GROUPS[0].id);
+      const [currentStepId, setCurrentStepId] = useState(GROUPS[0].steps[0].id);
+      const [conditions, setConditions] = useState([]);
+
+      const activeGroup = useMemo(() => GROUPS.find((g) => g.id === activeGroupId), [activeGroupId]);
+      const currentStep = useMemo(() => activeGroup.steps.find((s) => s.id === currentStepId), [activeGroup, currentStepId]);
+
+      function resetPath(g) {
+        const grp = g || activeGroup;
+        setActiveGroupId(grp.id);
+        setCurrentStepId(grp.steps[0].id);
+      }
+
+      function onPickGroup(id) {
+        const g = GROUPS.find((gg) => gg.id === id);
+        setActiveGroupId(id);
+        setCurrentStepId(g.steps[0].id);
+      }
+
+      function onChooseOption(opt) {
+        if (opt.result) {
+          setConditions((prev) => [...prev, opt.result]);
+        } else if (opt.goto) {
+          setCurrentStepId(opt.goto);
+        }
+      }
+
+      function removeCondition(idx) {
+        setConditions((prev) => prev.filter((_, i) => i !== idx));
+      }
+
+      function clearAll() {
+        setConditions([]);
+        resetPath();
+      }
+
+      const overallClass = useMemo(() => worstClass(conditions.map((c) => c.riskClass)), [conditions]);
+
+      const management = useMemo(() => {
+        if (!overallClass) return [];
+        const base = baseManagement(overallClass);
+        const extra = Array.from(new Set(conditions.flatMap((c) => conditionSpecificHints(c))));
+        const del = Array.from(new Set(conditions.flatMap((c) => deliveryGuidance(c, overallClass))));
+        return [...base, ...extra, ...del];
+      }, [conditions, overallClass]);
+
+      const summaryText = useMemo(() => {
+        const lines = [];
+        lines.push("ESC Pregnancy mWHO 2.0 Risk Summary");
+        if (conditions.length) {
+          lines.push("\\nIncluded conditions:");
+          conditions.forEach((c, i) => lines.push(`${i + 1}. ${c.label} → mWHO ${c.riskClass}`));
+        }
+        if (overallClass) {
+          lines.push(`\\nOverall mWHO class: ${overallClass}`);
+          lines.push(`Meaning: ${riskMeaning(overallClass)}`);
+        }
+        if (management.length) {
+          lines.push("\\nManagement & Delivery Guidance:");
+          management.forEach((m) => lines.push(`- ${m}`));
+        }
+        lines.push("\\nNotes: Assign the highest class when multiple conditions apply. Use Pregnancy Heart Team for mWHO II–III and above; expert-center care for mWHO III–IV.");
+        return lines.join("\\n");
+      }, [conditions, overallClass, management]);
+
+      async function copySummary() {
+        try {
+          await navigator.clipboard.writeText(summaryText);
+          alert("Summary copied to clipboard");
+        } catch (e) {
+          console.error(e);
+          alert("Copy failed. Select and copy manually.");
+        }
+      }
+
+      return (
+        <div className="mx-auto max-w-5xl p-4 md:p-8">
+          <header className="mb-6">
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">ESC Pregnancy in CVD — mWHO 2.0 Interactive Flowchart</h1>
+            <p className="text-sm text-gray-600 mt-1">Pick a disease group, answer the prompts, and build the assessment. The app returns the highest (worst) mWHO 2.0 class with risk meaning and management guidance.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {GROUPS.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => onPickGroup(g.id)}
+                  className={\`rounded-full px-3 py-1.5 text-sm border \${activeGroupId === g.id ? "bg-black text-white border-black" : "bg-white text-gray-800 border-gray-300 hover:bg-gray-50"}\`}
+                  title={g.subtitle || ""}
+                >
+                  {g.name}
+                </button>
+              ))}
+            </div>
+          </header>
+
+          <main className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="md:col-span-2 space-y-6">
+              <Card title={\`Step: \${activeGroup.name}\`} subtitle={activeGroup.subtitle}>
+                <div className="space-y-5">
+                  <div>
+                    <div className="text-sm font-medium mb-2">{currentStep.prompt}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {currentStep.options.map((opt) => (
+                        <button
+                          key={opt.id}
+                          onClick={() => onChooseOption(opt)}
+                          className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-left text-sm hover:bg-gray-50 focus:outline-none"
+                        >
+                          {opt.text}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => resetPath()} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50">Restart this group</button>
+                    <button onClick={() => { setActiveGroupId(GROUPS[0].id); setCurrentStepId(GROUPS[0].steps[0].id); }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50">Go to first group</button>
+                  </div>
+                </div>
+              </Card>
+
+              <Card title="Included conditions (click to remove)">
+                {conditions.length === 0 ? (
+                  <p className="text-sm text-gray-500">No conditions added yet. Choose options above to add results.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {conditions.map((c, idx) => (
+                      <li key={idx} className="flex items-center justify-between rounded-xl border p-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium truncate">{c.label}</div>
+                          <div className="text-xs text-gray-500">mWHO {c.riskClass}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Chip>mWHO {c.riskClass}</Chip>
+                          <button onClick={() => removeCondition(idx)} className="rounded-md border px-2 py-1 text-xs hover:bg-gray-50">Remove</button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {conditions.length > 0 && (
+                  <div className="mt-3">
+                    <button onClick={clearAll} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50">Clear all</button>
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            <div className="md:col-span-1 space-y-6">
+              <Card title="Overall mWHO class">
+                {!overallClass ? (
+                  <p className="text-sm text-gray-500">Add ≥1 condition to calculate overall class.</p>
+                ) : (
+                  <div>
+                    <div className="text-3xl font-bold">{overallClass}</div>
+                    <p className="text-sm text-gray-700 mt-1">{riskMeaning(overallClass)}</p>
+                  </div>
+                )}
+              </Card>
+
+              <Card title="Management & Delivery Guidance">
+                {management.length === 0 ? (
+                  <p className="text-sm text-gray-500">Add conditions to see guidance based on mWHO class and lesion type.</p>
+                ) : (
+                  <ul className="list-disc pl-5 space-y-1 text-sm">
+                    {management.map((m, i) => (
+                      <li key={i}>{m}</li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+
+              <Card title="Export">
+                <div className="space-y-2 text-sm">
+                  <p className="text-gray-600">Copy the structured summary for notes or letters.</p>
+                  <button onClick={async () => {
+                    try { await navigator.clipboard.writeText(summaryText); alert("Summary copied to clipboard"); }
+                    catch(e){ alert("Copy failed. Select and copy manually."); }
+                  }} className="rounded-lg border border-gray-300 px-3 py-2 text-sm hover:bg-gray-50">Copy summary</button>
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs text-gray-600">Preview summary text</summary>
+                    <pre className="text-xs mt-2 whitespace-pre-wrap bg-gray-50 p-2 rounded-lg border max-h-64 overflow-auto">{summaryText}</pre>
+                  </details>
+                </div>
+              </Card>
+
+              <Card title="Notes & Disclaimers">
+                <ul className="list-disc pl-5 space-y-1 text-xs text-gray-600">
+                  <li>This tool summarizes the ESC 2025 Pregnancy in CVD (mWHO 2.0) examples. Always verify details in the full guideline.</li>
+                  <li>When multiple conditions exist, assign the highest class.</li>
+                  <li>Management must be individualized by a Pregnancy Heart Team, especially for mWHO II–III and higher.</li>
+                </ul>
+              </Card>
+            </div>
+          </main>
+
+          <footer className="mt-8 text-xs text-gray-500">
+            Built for quick clinical triage. For nuanced decisions (anticoagulation with mechanical valves, critical AS, large aortopathy, PAH), consult the full guideline and local protocols.
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
